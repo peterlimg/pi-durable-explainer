@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pi Durable: How it works</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Barlow+Condensed:wght@600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper:#FBFBF8; --ink:#1A1F26; --muted:#5B6470; --rule:#D5D9DE;
+    --signal:#1F4E8C; --signal-soft:#E4ECF6;
+    --caution:#E8B400; --caution-soft:#FFF4CC;
+    --stop:#B3261E; --stop-soft:#F8E2E0;
+    --go:#2E6B3F; --go-soft:#E2F0E5;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--paper);color:var(--ink);font:400 17px/1.55 "Barlow",system-ui,sans-serif}
+  main{max-width:760px;margin:0 auto;padding:28px 18px 64px}
+  h1,h2,h3{font-family:"Barlow Condensed",sans-serif;line-height:1.1;margin:0}
+  h1{font-size:clamp(40px,9vw,64px);letter-spacing:-.5px}
+  h2{font-size:30px;margin:48px 0 6px;padding-top:14px;border-top:3px solid var(--ink)}
+  h3{font-size:21px;margin:0 0 4px}
+  p{margin:8px 0}
+  .lede{font-size:19px;max-width:60ch}
+  .muted{color:var(--muted)}
+  .note{border-left:6px solid var(--caution);background:var(--caution-soft);padding:10px 14px;margin:18px 0}
+  .note b{display:block}
+  svg{width:100%;height:auto;display:block}
+  .figure{margin:14px 0;border:1px solid var(--rule);background:#fff;padding:12px}
+  .cap{font-size:14px;color:var(--muted);margin-top:6px}
+  .problem{display:grid;grid-template-columns:1fr;gap:0;border:1px solid var(--rule);background:#fff}
+  .problem>div{padding:14px 16px;border-bottom:1px solid var(--rule)}
+  .problem>div:last-child{border-bottom:0}
+  .pr-row{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  .pr-row p{margin:2px 0;font-size:15.5px}
+  .tag{font-weight:600;font-size:14px}
+  .bad .tag{color:var(--stop)} .good .tag{color:var(--go)}
+  @media (max-width:520px){.pr-row{grid-template-columns:1fr;gap:6px}}
+  dl{margin:10px 0;display:grid;grid-template-columns:150px 1fr;border-top:1px solid var(--rule)}
+  dt,dd{margin:0;padding:9px 0;border-bottom:1px solid var(--rule)}
+  dt{font-weight:600}
+  @media (max-width:520px){dl{grid-template-columns:1fr} dt{border-bottom:0;padding-bottom:0}}
+  .sim{border:2px solid var(--ink);background:#fff;padding:14px}
+  .sim-steps{list-style:none;padding:0;margin:12px 0;counter-reset:s}
+  .sim-steps li{counter-increment:s;display:flex;gap:10px;align-items:center;padding:8px 10px;border:1px solid var(--rule);margin-bottom:6px;transition:background .25s,border-color .25s}
+  .sim-steps li::before{content:counter(s);font:700 15px "Barlow Condensed";width:24px;height:24px;flex:none;border-radius:50%;display:grid;place-items:center;background:var(--rule)}
+  .sim-steps li.saved{background:var(--go-soft);border-color:var(--go)}
+  .sim-steps li.saved::before{background:var(--go);color:#fff}
+  .sim-steps li.lost{background:var(--stop-soft);border-color:var(--stop);text-decoration:line-through}
+  .sim-steps li.now{background:var(--signal-soft);border-color:var(--signal)}
+  .controls{display:flex;flex-wrap:wrap;gap:8px}
+  button{font:600 16px "Barlow",sans-serif;padding:10px 14px;border:2px solid var(--ink);background:#fff;color:var(--ink);cursor:pointer}
+  button.primary{background:var(--signal);border-color:var(--signal);color:#fff}
+  button.danger{border-color:var(--stop);color:var(--stop)}
+  button:focus-visible{outline:3px solid var(--caution);outline-offset:2px}
+  button:disabled{opacity:.4;cursor:not-allowed}
+  .mode{display:flex;gap:0;margin:8px 0 4px}
+  .mode button{flex:1;border-width:2px}
+  .mode button[aria-pressed="true"]{background:var(--ink);color:#fff}
+  #log{min-height:48px;font-size:15.5px;padding:8px 10px;background:var(--paper);border:1px dashed var(--rule)}
+  code{font-size:14.5px;background:var(--signal-soft);padding:1px 5px}
+  footer{margin-top:48px;font-size:14px;color:var(--muted)}
+  @media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<main>
+
+<h1>Pi Durable</h1>
+<p class="lede">Pi Durable is a library for AI agents. It keeps the work of the agent safe. If the program stops, the agent continues from the last saved step.</p>
+<p class="muted">Package: <code>@earendil-works/pi-durable</code> (version 1.0.4). It is part of the Pi agent project.</p>
+
+<div class="note"><b>Caution</b>The library is experimental. The API can change between releases without a warning.</div>
+
+<h2>What it does</h2>
+<p>An AI agent does work in many steps. It reads your message. It asks a model. It runs tools. It writes an answer.</p>
+<p>Pi Durable saves each step to storage <strong>before</strong> it shows the result. This is the main rule. Storage can be memory, SQLite, or JSONL files.</p>
+<p>If the process stops during a step, nothing is lost. You open the storage again. The agent finds the last saved step and continues.</p>
+
+<div class="figure">
+<svg viewBox="0 0 340 300" role="img" aria-label="The main rule: do the step, save the step, then show the step">
+  <defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#1A1F26"/></marker></defs>
+  <g font-family="Barlow, sans-serif" font-size="15" text-anchor="middle">
+    <rect x="70" y="10" width="200" height="50" fill="#E4ECF6" stroke="#1F4E8C" stroke-width="2"/>
+    <text x="170" y="40" font-weight="600">1. Do the step</text>
+    <line x1="170" y1="60" x2="170" y2="100" stroke="#1A1F26" stroke-width="2" marker-end="url(#a)"/>
+    <rect x="70" y="102" width="200" height="56" fill="#E2F0E5" stroke="#2E6B3F" stroke-width="2"/>
+    <text x="170" y="127" font-weight="600">2. Save the step</text>
+    <text x="170" y="146" font-size="13">(one atomic commit)</text>
+    <line x1="170" y1="158" x2="170" y2="198" stroke="#1A1F26" stroke-width="2" marker-end="url(#a)"/>
+    <rect x="70" y="200" width="200" height="50" fill="#fff" stroke="#1A1F26" stroke-width="2"/>
+    <text x="170" y="230" font-weight="600">3. Show the step</text>
+    <path d="M270 225 Q320 225 320 130 Q320 35 274 35" fill="none" stroke="#1A1F26" stroke-width="2" stroke-dasharray="5 4" marker-end="url(#a)"/>
+    <text x="170" y="285" font-size="13" fill="#5B6470">Repeat for the next step</text>
+  </g>
+</svg>
+<div class="cap">Figure 1. The main rule. A step is not shown until it is saved.</div>
+</div>
+
+<h2>Try it: stop the program</h2>
+<p>Use this simulation. Select a mode. Push “Run next step”. Then push “Crash” at any time. Then push “Restart”.</p>
+
+<div class="sim">
+  <div class="mode" role="group" aria-label="Mode">
+    <button id="mPlain" aria-pressed="false">Normal agent</button>
+    <button id="mDur" aria-pressed="true">Pi Durable</button>
+  </div>
+  <ol class="sim-steps" id="steps">
+    <li>You send a message</li>
+    <li>Model reads the message</li>
+    <li>Model asks to run 2 tools</li>
+    <li>Tool 1 runs</li>
+    <li>Tool 2 runs</li>
+    <li>Model writes the answer</li>
+  </ol>
+  <div class="controls">
+    <button class="primary" id="next">Run next step</button>
+    <button class="danger" id="crash">Crash</button>
+    <button id="restart">Restart</button>
+  </div>
+  <p id="log" aria-live="polite">Push “Run next step” to start.</p>
+</div>
+
+<h2>How one message flows</h2>
+<p>This chart shows one message from you to the final answer. Each box is a saved entry. Each blue box is a task. A task saves a checkpoint at each step.</p>
+
+<div class="figure">
+<svg viewBox="0 0 340 640" role="img" aria-label="Flow of one input through pi-durable">
+  <defs><marker id="b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#1A1F26"/></marker></defs>
+  <g font-family="Barlow, sans-serif" font-size="14" text-anchor="middle">
+    <!-- submit -->
+    <rect x="80" y="8" width="180" height="44" rx="22" fill="#1A1F26"/>
+    <text x="170" y="35" fill="#fff" font-weight="600">You: submit(input)</text>
+    <line x1="170" y1="52" x2="170" y2="80" stroke="#1A1F26" stroke-width="2" marker-end="url(#b)"/>
+    <rect x="80" y="82" width="180" height="40" fill="#fff" stroke="#1A1F26" stroke-width="2"/>
+    <text x="170" y="107">Entry: pi.user</text>
+    <line x1="170" y1="122" x2="170" y2="150" stroke="#1A1F26" stroke-width="2" marker-end="url(#b)"/>
+    <!-- generation -->
+    <rect x="60" y="152" width="220" height="48" fill="#E4ECF6" stroke="#1F4E8C" stroke-width="2"/>
+    <text x="170" y="174" font-weight="600">Task: pi.generation</text>
+    <text x="170" y="192" font-size="12.5">calls the model</text>
+    <line x1="170" y1="200" x2="170" y2="228" stroke="#1A1F26" stroke-width="2" marker-end="url(#b)"/>
+    <!-- decision -->
+    <polygon points="170,230 290,280 170,330 50,280" fill="#FFF4CC" stroke="#E8B400" stroke-width="2"/>
+    <text x="170" y="276" font-weight="600">Tool calls</text>
+    <text x="170" y="294" font-weight="600">in the answer?</text>
+    <!-- yes branch -->
+    <line x1="170" y1="330" x2="170" y2="368" stroke="#1A1F26" stroke-width="2" marker-end="url(#b)"/>
+    <text x="186" y="354" font-size="13" text-anchor="start">Yes</text>
+    <rect x="60" y="370" width="220" height="40" fill="#fff" stroke="#1A1F26" stroke-width="2"/>
+    <text x="170" y="395">Entry: pi.assistant (tool calls)</text>
+    <line x1="170" y1="410" x2="170" y2="436" stroke="#1A1F26" stroke-width="2" marker-end="url(#b)"/>
+    <rect x="60" y="438" width="220" height="48" fill="#E4ECF6" stroke="#1F4E8C" stroke-width="2"/>
+    <text x="170" y="460" font-weight="600">Task: pi.tool × n</text>
+    <text x="170" y="478" font-size="12.5">generation waits for all tools</text>
+    <line x1="170" y1="486" x2="170" y2="512" stroke="#1A1F26" stroke-width="2" marker-end="url(#b)"/>
+    <rect x="60" y="514" width="220" height="40" fill="#fff" stroke="#1A1F26" stroke-width="2"/>
+    <text x="170" y="539">Entry: pi.tool-result × n</text>
+    <!-- loop back -->
+    <path d="M60 534 H20 V176 H56" fill="none" stroke="#1F4E8C" stroke-width="2" stroke-dasharray="5 4" marker-end="url(#b)"/>
+    <text x="14" y="360" font-size="12.5" fill="#1F4E8C" transform="rotate(-90 14 360)">next generation</text>
+    <!-- no branch -->
+    <line x1="290" y1="280" x2="318" y2="280" stroke="#1A1F26" stroke-width="2"/>
+    <line x1="318" y1="280" x2="318" y2="586" stroke="#1A1F26" stroke-width="2"/>
+    <line x1="318" y1="604" x2="318" y2="604" stroke="#1A1F26"/>
+    <text x="304" y="270" font-size="13">No</text>
+    <line x1="318" y1="586" x2="282" y2="600" stroke="#1A1F26" stroke-width="2" marker-end="url(#b)"/>
+    <rect x="60" y="580" width="220" height="48" rx="24" fill="#E2F0E5" stroke="#2E6B3F" stroke-width="2"/>
+    <text x="170" y="602" font-weight="600">Entry: pi.assistant (answer)</text>
+    <text x="170" y="619" font-size="12.5">submission is “done”</text>
+  </g>
+</svg>
+<div class="cap">Figure 2. One input, from submit to answer. The tool loop continues until the model gives an answer with no tool calls.</div>
+</div>
+
+<h2>Problems it solves</h2>
+<p>Each row shows a problem with a normal agent. It shows what Pi Durable does.</p>
+
+<div class="problem">
+  <div><h3>The program stops during a turn</h3>
+    <div class="pr-row"><p class="bad"><span class="tag">Problem.</span> The agent loses the work. You must start again.</p>
+    <p class="good"><span class="tag">Pi Durable.</span> Tasks save a checkpoint at each step. <code>resume()</code> continues the work.</p></div></div>
+  <div><h3>A write stops halfway</h3>
+    <div class="pr-row"><p class="bad"><span class="tag">Problem.</span> Some data is saved and some is not. The state is broken.</p>
+    <p class="good"><span class="tag">Pi Durable.</span> A commit is atomic. It saves all changes or no changes.</p></div></div>
+  <div><h3>The same message is sent two times</h3>
+    <div class="pr-row"><p class="bad"><span class="tag">Problem.</span> A retry after a crash runs the work two times.</p>
+    <p class="good"><span class="tag">Pi Durable.</span> Give a <code>requestId</code>. The second send finds the first submission.</p></div></div>
+  <div><h3>You send a message while the agent works</h3>
+    <div class="pr-row"><p class="bad"><span class="tag">Problem.</span> The message is lost, or it breaks the current run.</p>
+    <p class="good"><span class="tag">Pi Durable.</span> The message goes into an inbox. It is a “steer” (join now) or a “follow-up” (after the answer).</p></div></div>
+  <div><h3>The conversation becomes too long</h3>
+    <div class="pr-row"><p class="bad"><span class="tag">Problem.</span> The model rejects the request. The context is too large.</p>
+    <p class="good"><span class="tag">Pi Durable.</span> Compaction makes a summary of old entries. Reset starts a new context. Old entries stay in storage.</p></div></div>
+  <div><h3>You must stop work that has sub-work</h3>
+    <div class="pr-row"><p class="bad"><span class="tag">Problem.</span> Child work continues after you stop the parent.</p>
+    <p class="good"><span class="tag">Pi Durable.</span> Abort goes from the bottom up. Each task stops its child tasks first.</p></div></div>
+  <div><h3>You do not know the cost</h3>
+    <div class="pr-row"><p class="bad"><span class="tag">Problem.</span> Spend on the model is not recorded.</p>
+    <p class="good"><span class="tag">Pi Durable.</span> The <code>pi.usage</code> document records spend for each conversation.</p></div></div>
+</div>
+
+<h2>Restart: what happens</h2>
+<div class="figure">
+<svg viewBox="0 0 340 250" role="img" aria-label="Restart flow">
+  <defs><marker id="c" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#1A1F26"/></marker></defs>
+  <g font-family="Barlow, sans-serif" font-size="14" text-anchor="middle">
+    <rect x="60" y="8" width="220" height="40" fill="#F8E2E0" stroke="#B3261E" stroke-width="2"/>
+    <text x="170" y="33" font-weight="600">Process stops (crash)</text>
+    <line x1="170" y1="48" x2="170" y2="72" stroke="#1A1F26" stroke-width="2" marker-end="url(#c)"/>
+    <rect x="60" y="74" width="220" height="40" fill="#fff" stroke="#1A1F26" stroke-width="2"/>
+    <text x="170" y="99">Harness.open(same storage)</text>
+    <line x1="170" y1="114" x2="170" y2="138" stroke="#1A1F26" stroke-width="2" marker-end="url(#c)"/>
+    <rect x="60" y="140" width="220" height="40" fill="#E4ECF6" stroke="#1F4E8C" stroke-width="2"/>
+    <text x="170" y="165">harness.resume()</text>
+    <line x1="170" y1="180" x2="170" y2="204" stroke="#1A1F26" stroke-width="2" marker-end="url(#c)"/>
+    <rect x="60" y="206" width="220" height="40" fill="#E2F0E5" stroke="#2E6B3F" stroke-width="2"/>
+    <text x="170" y="231" font-weight="600">Tasks continue from checkpoint</text>
+  </g>
+</svg>
+<div class="cap">Figure 3. Recovery after a crash. Use SQLite or JSONL storage. Memory storage does not keep data after a restart.</div>
+</div>
+
+<h2>Words to know</h2>
+<dl>
+  <dt>Harness</dt><dd>The main object. It opens one storage and runs agents on it.</dd>
+  <dt>Conversation</dt><dd>A list of entries. You can make more conversations and fork them.</dd>
+  <dt>Entry</dt><dd>One record in a conversation. You cannot change it after it is saved.</dd>
+  <dt>Commit</dt><dd>One atomic write. It can add entries, change documents, and make tasks.</dd>
+  <dt>Document</dt><dd>Typed JSON state next to the conversation, for example the inbox or the cost.</dd>
+  <dt>Task</dt><dd>A step-by-step job that saves a checkpoint at each step.</dd>
+  <dt>Submission</dt><dd>Something you send to a conversation. You can wait for it.</dd>
+  <dt>Extension</dt><dd>A named set of tools, prompt sections, hooks, and tasks.</dd>
+</dl>
+
+<footer>Source: the README of <code>@earendil-works/pi-durable</code> on npm, version 1.0.4. Text written in the style of ASD-STE100 Simplified Technical English.</footer>
+</main>
+
+<script>
+const items=[...document.querySelectorAll('#steps li')];
+const log=document.getElementById('log');
+const bNext=document.getElementById('next'),bCrash=document.getElementById('crash'),bRestart=document.getElementById('restart');
+const mPlain=document.getElementById('mPlain'),mDur=document.getElementById('mDur');
+let durable=true,pos=0,crashed=false;
+function paint(){items.forEach((li,i)=>{li.className='';if(i<pos)li.classList.add(crashed&&!durable?'lost':'saved');if(i===pos&&!crashed&&pos<items.length)li.classList.add('now');});
+  bNext.disabled=crashed||pos>=items.length;bCrash.disabled=crashed||pos===0||pos>=items.length;bRestart.disabled=!crashed&&pos<items.length&&pos!==0?false:false;}
+function setMode(d){durable=d;mDur.setAttribute('aria-pressed',d);mPlain.setAttribute('aria-pressed',!d);pos=0;crashed=false;log.textContent=d?'Pi Durable mode. Each step is saved before it is shown.':'Normal mode. Steps stay only in memory.';paint();}
+mPlain.onclick=()=>setMode(false);mDur.onclick=()=>setMode(true);
+bNext.onclick=()=>{pos++;log.textContent=pos>=items.length?'The answer is ready. The submission is done.':(durable?'Step '+pos+' is saved to storage.':'Step '+pos+' is done. It is not saved.');paint();};
+bCrash.onclick=()=>{crashed=true;log.textContent=durable?'Crash. The process stopped. Steps 1 to '+pos+' are in storage.':'Crash. The process stopped. All work is lost.';paint();};
+bRestart.onclick=()=>{if(!crashed){pos=0;log.textContent='Started again from step 1.';paint();return;}
+  crashed=false;if(durable){log.textContent='Restart. The storage is opened. The agent continues at step '+(pos+1)+'.';}else{pos=0;log.textContent='Restart. Nothing is saved. You must send the message again.';}paint();};
+paint();
+</script>
+</body>
+</html>
